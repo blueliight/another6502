@@ -29,15 +29,15 @@
 
 mos6502::Instr mos6502::InstrTable[256];
 
-mos6502::mos6502(BusRead r, BusWrite w)
+mos6502::mos6502( ReadWriteable * ram )
 	: reset_A(0x00)
     , reset_X(0x00)
     , reset_Y(0x00)
     , reset_sp(0xFD)
     , reset_status(CONSTANT)
 {
-	Write = (BusWrite)w;
-	Read = (BusRead)r;
+
+	VirtualMemory = ram;
 
 	static bool initialized = false;
 	if (initialized) return;
@@ -733,8 +733,8 @@ uint16_t mos6502::Addr_ABS()
 	uint16_t addrH;
 	uint16_t addr;
 
-	addrL = Read(pc++);
-	addrH = Read(pc++);
+	addrL = VirtualMemory->read(pc++);
+	addrH = VirtualMemory->read(pc++);
 
 	addr = addrL + (addrH << 8);
 
@@ -743,7 +743,7 @@ uint16_t mos6502::Addr_ABS()
 
 uint16_t mos6502::Addr_ZER()
 {
-	return Read(pc++);
+	return VirtualMemory->read(pc++);
 }
 
 uint16_t mos6502::Addr_IMP()
@@ -756,7 +756,7 @@ uint16_t mos6502::Addr_REL()
 	uint16_t offset;
 	uint16_t addr;
 
-	offset = (uint16_t)Read(pc++);
+	offset = (uint16_t)VirtualMemory->read(pc++);
 	if (offset & 0x80) offset |= 0xFF00;
 	addr = pc + (int16_t)offset;
 	return addr;
@@ -771,17 +771,17 @@ uint16_t mos6502::Addr_ABI()
 	uint16_t abs;
 	uint16_t addr;
 
-	addrL = Read(pc++);
-	addrH = Read(pc++);
+	addrL = VirtualMemory->read(pc++);
+	addrH = VirtualMemory->read(pc++);
 
 	abs = (addrH << 8) | addrL;
 
-	effL = Read(abs);
+	effL = VirtualMemory->read(abs);
 
 #ifndef CMOS_INDIRECT_JMP_FIX
-	effH = Read((abs & 0xFF00) + ((abs + 1) & 0x00FF) );
+	effH = VirtualMemory->read((abs & 0xFF00) + ((abs + 1) & 0x00FF) );
 #else
-	effH = Read(abs + 1);
+	effH = VirtualMemory->read(abs + 1);
 #endif
 
 	addr = effL + 0x100 * effH;
@@ -791,13 +791,13 @@ uint16_t mos6502::Addr_ABI()
 
 uint16_t mos6502::Addr_ZEX()
 {
-	uint16_t addr = (Read(pc++) + X) % 256;
+	uint16_t addr = (VirtualMemory->read(pc++) + X) % 256;
 	return addr;
 }
 
 uint16_t mos6502::Addr_ZEY()
 {
-	uint16_t addr = (Read(pc++) + Y) % 256;
+	uint16_t addr = (VirtualMemory->read(pc++) + Y) % 256;
 	return addr;
 }
 
@@ -807,8 +807,8 @@ uint16_t mos6502::Addr_ABX()
 	uint16_t addrL;
 	uint16_t addrH;
 
-	addrL = Read(pc++);
-	addrH = Read(pc++);
+	addrL = VirtualMemory->read(pc++);
+	addrH = VirtualMemory->read(pc++);
 
 	addr = addrL + (addrH << 8) + X;
 	return addr;
@@ -820,8 +820,8 @@ uint16_t mos6502::Addr_ABY()
 	uint16_t addrL;
 	uint16_t addrH;
 
-	addrL = Read(pc++);
-	addrH = Read(pc++);
+	addrL = VirtualMemory->read(pc++);
+	addrH = VirtualMemory->read(pc++);
 
 	addr = addrL + (addrH << 8) + Y;
 	return addr;
@@ -834,9 +834,9 @@ uint16_t mos6502::Addr_INX()
 	uint16_t zeroH;
 	uint16_t addr;
 
-	zeroL = (Read(pc++) + X) % 256;
+	zeroL = (VirtualMemory->read(pc++) + X) % 256;
 	zeroH = (zeroL + 1) % 256;
-	addr = Read(zeroL) + (Read(zeroH) << 8);
+	addr = VirtualMemory->read(zeroL) + (VirtualMemory->read(zeroH) << 8);
 
 	return addr;
 }
@@ -847,9 +847,9 @@ uint16_t mos6502::Addr_INY()
 	uint16_t zeroH;
 	uint16_t addr;
 
-	zeroL = Read(pc++);
+	zeroL = VirtualMemory->read(pc++);
 	zeroH = (zeroL + 1) % 256;
-	addr = Read(zeroL) + (Read(zeroH) << 8) + Y;
+	addr = VirtualMemory->read(zeroL) + (VirtualMemory->read(zeroH) << 8) + Y;
 
 	return addr;
 }
@@ -861,8 +861,8 @@ void mos6502::Reset()
 	X = reset_X;
 
 	// load PC from reset vector
-	uint8_t pcl = Read(rstVectorL);
-	uint8_t pch = Read(rstVectorH);
+	uint8_t pcl = VirtualMemory->read(rstVectorL);
+	uint8_t pch = VirtualMemory->read(rstVectorH);
 	pc = (pch << 8) + pcl;
 
 	sp = reset_sp;
@@ -876,7 +876,7 @@ void mos6502::Reset()
 
 void mos6502::StackPush(uint8_t byte)
 {
-	Write(0x0100 + sp, byte);
+	VirtualMemory->write(0x0100 + sp, byte);
 	if(sp == 0x00) sp = 0xFF;
 	else sp--;
 }
@@ -885,7 +885,7 @@ uint8_t mos6502::StackPop()
 {
 	if(sp == 0xFF) sp = 0x00;
 	else sp++;
-	return Read(0x0100 + sp);
+	return VirtualMemory->read(0x0100 + sp);
 }
 
 void mos6502::IRQ()
@@ -899,8 +899,8 @@ void mos6502::IRQ()
 		SET_INTERRUPT(1);
 
 		// load PC from reset vector
-		uint8_t pcl = Read(irqVectorL);
-		uint8_t pch = Read(irqVectorH);
+		uint8_t pcl = VirtualMemory->read(irqVectorL);
+		uint8_t pch = VirtualMemory->read(irqVectorH);
 		pc = (pch << 8) + pcl;
 	}
 	return;
@@ -915,8 +915,8 @@ void mos6502::NMI()
 	SET_INTERRUPT(1);
 
 	// load PC from reset vector
-	uint8_t pcl = Read(nmiVectorL);
-	uint8_t pch = Read(nmiVectorH);
+	uint8_t pcl = VirtualMemory->read(nmiVectorL);
+	uint8_t pch = VirtualMemory->read(nmiVectorH);
 	pc = (pch << 8) + pcl;
 	return;
 }
@@ -932,7 +932,7 @@ void mos6502::Run(
 	while(cyclesRemaining > 0 && !illegalOpcode)
 	{
 		// fetch
-		opcode = Read(pc++);
+		opcode = VirtualMemory->read(pc++);
 
 		// decode
 		instr = InstrTable[opcode];
@@ -954,7 +954,7 @@ void mos6502::RunEternally()
 	while(!illegalOpcode)
 	{
 		// fetch
-		opcode = Read(pc++);
+		opcode = VirtualMemory->read(pc++);
 
 		// decode
 		instr = InstrTable[opcode];
@@ -1058,7 +1058,7 @@ void mos6502::Op_ILLEGAL(uint16_t src)
 
 void mos6502::Op_ADC(uint16_t src)
 {
-	uint8_t m = Read(src);
+	uint8_t m = VirtualMemory->read(src);
 	unsigned int tmp = m + A + (IF_CARRY() ? 1 : 0);
 	SET_ZERO(!(tmp & 0xFF));
 	if (IF_DECIMAL())
@@ -1087,7 +1087,7 @@ void mos6502::Op_ADC(uint16_t src)
 
 void mos6502::Op_AND(uint16_t src)
 {
-	uint8_t m = Read(src);
+	uint8_t m = VirtualMemory->read(src);
 	uint8_t res = m & A;
 	SET_NEGATIVE(res & 0x80);
 	SET_ZERO(!res);
@@ -1098,13 +1098,13 @@ void mos6502::Op_AND(uint16_t src)
 
 void mos6502::Op_ASL(uint16_t src)
 {
-	uint8_t m = Read(src);
+	uint8_t m = VirtualMemory->read(src);
 	SET_CARRY(m & 0x80);
 	m <<= 1;
 	m &= 0xFF;
 	SET_NEGATIVE(m & 0x80);
 	SET_ZERO(!m);
-	Write(src, m);
+	VirtualMemory->write(src, m);
 	return;
 }
 
@@ -1150,7 +1150,7 @@ void mos6502::Op_BEQ(uint16_t src)
 
 void mos6502::Op_BIT(uint16_t src)
 {
-	uint8_t m = Read(src);
+	uint8_t m = VirtualMemory->read(src);
 	uint8_t res = m & A;
 	SET_NEGATIVE(res & 0x80);
 	status = (status & 0x3F) | (uint8_t)(m & 0xC0) | CONSTANT | BREAK;
@@ -1192,7 +1192,7 @@ void mos6502::Op_BRK(uint16_t src)
 	StackPush(pc & 0xFF);
 	StackPush(status | CONSTANT | BREAK);
 	SET_INTERRUPT(1);
-	pc = (Read(irqVectorH) << 8) + Read(irqVectorL);
+	pc = (VirtualMemory->read(irqVectorH) << 8) + VirtualMemory->read(irqVectorL);
 	return;
 }
 
@@ -1240,7 +1240,7 @@ void mos6502::Op_CLV(uint16_t src)
 
 void mos6502::Op_CMP(uint16_t src)
 {
-	unsigned int tmp = A - Read(src);
+	unsigned int tmp = A - VirtualMemory->read(src);
 	SET_CARRY(tmp < 0x100);
 	SET_NEGATIVE(tmp & 0x80);
 	SET_ZERO(!(tmp & 0xFF));
@@ -1249,7 +1249,7 @@ void mos6502::Op_CMP(uint16_t src)
 
 void mos6502::Op_CPX(uint16_t src)
 {
-	unsigned int tmp = X - Read(src);
+	unsigned int tmp = X - VirtualMemory->read(src);
 	SET_CARRY(tmp < 0x100);
 	SET_NEGATIVE(tmp & 0x80);
 	SET_ZERO(!(tmp & 0xFF));
@@ -1258,7 +1258,7 @@ void mos6502::Op_CPX(uint16_t src)
 
 void mos6502::Op_CPY(uint16_t src)
 {
-	unsigned int tmp = Y - Read(src);
+	unsigned int tmp = Y - VirtualMemory->read(src);
 	SET_CARRY(tmp < 0x100);
 	SET_NEGATIVE(tmp & 0x80);
 	SET_ZERO(!(tmp & 0xFF));
@@ -1267,11 +1267,11 @@ void mos6502::Op_CPY(uint16_t src)
 
 void mos6502::Op_DEC(uint16_t src)
 {
-	uint8_t m = Read(src);
+	uint8_t m = VirtualMemory->read(src);
 	m = (m - 1) % 256;
 	SET_NEGATIVE(m & 0x80);
 	SET_ZERO(!m);
-	Write(src, m);
+	VirtualMemory->write(src, m);
 	return;
 }
 
@@ -1297,7 +1297,7 @@ void mos6502::Op_DEY(uint16_t src)
 
 void mos6502::Op_EOR(uint16_t src)
 {
-	uint8_t m = Read(src);
+	uint8_t m = VirtualMemory->read(src);
 	m = A ^ m;
 	SET_NEGATIVE(m & 0x80);
 	SET_ZERO(!m);
@@ -1306,11 +1306,11 @@ void mos6502::Op_EOR(uint16_t src)
 
 void mos6502::Op_INC(uint16_t src)
 {
-	uint8_t m = Read(src);
+	uint8_t m = VirtualMemory->read(src);
 	m = (m + 1) % 256;
 	SET_NEGATIVE(m & 0x80);
 	SET_ZERO(!m);
-	Write(src, m);
+	VirtualMemory->write(src, m);
 }
 
 void mos6502::Op_INX(uint16_t src)
@@ -1346,7 +1346,7 @@ void mos6502::Op_JSR(uint16_t src)
 
 void mos6502::Op_LDA(uint16_t src)
 {
-	uint8_t m = Read(src);
+	uint8_t m = VirtualMemory->read(src);
 	SET_NEGATIVE(m & 0x80);
 	SET_ZERO(!m);
 	A = m;
@@ -1354,7 +1354,7 @@ void mos6502::Op_LDA(uint16_t src)
 
 void mos6502::Op_LDX(uint16_t src)
 {
-	uint8_t m = Read(src);
+	uint8_t m = VirtualMemory->read(src);
 	SET_NEGATIVE(m & 0x80);
 	SET_ZERO(!m);
 	X = m;
@@ -1362,7 +1362,7 @@ void mos6502::Op_LDX(uint16_t src)
 
 void mos6502::Op_LDY(uint16_t src)
 {
-	uint8_t m = Read(src);
+	uint8_t m = VirtualMemory->read(src);
 	SET_NEGATIVE(m & 0x80);
 	SET_ZERO(!m);
 	Y = m;
@@ -1370,12 +1370,12 @@ void mos6502::Op_LDY(uint16_t src)
 
 void mos6502::Op_LSR(uint16_t src)
 {
-	uint8_t m = Read(src);
+	uint8_t m = VirtualMemory->read(src);
 	SET_CARRY(m & 0x01);
 	m >>= 1;
 	SET_NEGATIVE(0);
 	SET_ZERO(!m);
-	Write(src, m);
+	VirtualMemory->write(src, m);
 }
 
 void mos6502::Op_LSR_ACC(uint16_t src)
@@ -1395,7 +1395,7 @@ void mos6502::Op_NOP(uint16_t src)
 
 void mos6502::Op_ORA(uint16_t src)
 {
-	uint8_t m = Read(src);
+	uint8_t m = VirtualMemory->read(src);
 	m = A | m;
 	SET_NEGATIVE(m & 0x80);
 	SET_ZERO(!m);
@@ -1431,14 +1431,14 @@ void mos6502::Op_PLP(uint16_t src)
 
 void mos6502::Op_ROL(uint16_t src)
 {
-	uint16_t m = Read(src);
+	uint16_t m = VirtualMemory->read(src);
 	m <<= 1;
 	if (IF_CARRY()) m |= 0x01;
 	SET_CARRY(m > 0xFF);
 	m &= 0xFF;
 	SET_NEGATIVE(m & 0x80);
 	SET_ZERO(!m);
-	Write(src, m);
+	VirtualMemory->write(src, m);
 	return;
 }
 
@@ -1457,14 +1457,14 @@ void mos6502::Op_ROL_ACC(uint16_t src)
 
 void mos6502::Op_ROR(uint16_t src)
 {
-	uint16_t m = Read(src);
+	uint16_t m = VirtualMemory->read(src);
 	if (IF_CARRY()) m |= 0x100;
 	SET_CARRY(m & 0x01);
 	m >>= 1;
 	m &= 0xFF;
 	SET_NEGATIVE(m & 0x80);
 	SET_ZERO(!m);
-	Write(src, m);
+	VirtualMemory->write(src, m);
 	return;
 }
 
@@ -1507,7 +1507,7 @@ void mos6502::Op_RTS(uint16_t src)
 
 void mos6502::Op_SBC(uint16_t src)
 {
-	uint8_t m = Read(src);
+	uint8_t m = VirtualMemory->read(src);
 	unsigned int tmp = A - m - (IF_CARRY() ? 0 : 1);
 	SET_NEGATIVE(tmp & 0x80);
 	SET_ZERO(!(tmp & 0xFF));
@@ -1546,19 +1546,19 @@ void mos6502::Op_SEI(uint16_t src)
 
 void mos6502::Op_STA(uint16_t src)
 {
-	Write(src, A);
+	VirtualMemory->write(src, A);
 	return;
 }
 
 void mos6502::Op_STX(uint16_t src)
 {
-	Write(src, X);
+	VirtualMemory->write(src, X);
 	return;
 }
 
 void mos6502::Op_STY(uint16_t src)
 {
-	Write(src, Y);
+	VirtualMemory->write(src, Y);
 	return;
 }
 

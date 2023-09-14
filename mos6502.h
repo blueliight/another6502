@@ -9,6 +9,13 @@
 #pragma once
 #include <stdint.h>
 
+class ReadWriteable
+{
+public:
+	virtual uint8_t read( uint16_t addr ) = 0;
+	virtual void write( uint16_t addr, uint8_t data ) = 0;
+};
+
 class mos6502
 {
 private:
@@ -143,10 +150,12 @@ private:
 	static const uint16_t nmiVectorL = 0xFFFA;
 
 	// read/write callbacks
-	typedef void (*BusWrite)(uint16_t, uint8_t);
-	typedef uint8_t (*BusRead)(uint16_t);
-	BusRead Read;
-	BusWrite Write;
+	//typedef void (*BusWrite)(uint16_t, uint8_t);
+	//typedef uint8_t (*BusRead)(uint16_t);
+	//BusRead Read;
+	//BusWrite Write;
+
+	ReadWriteable * VirtualMemory;
 
 	// stack operations
 	inline void StackPush(uint8_t byte);
@@ -157,7 +166,7 @@ public:
 		INST_COUNT,
 		CYCLE_COUNT,
 	};
-	mos6502(BusRead r, BusWrite w);
+	mos6502( ReadWriteable * ram );
 	void NMI();
 	void IRQ();
 	void Reset();
