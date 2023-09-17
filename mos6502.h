@@ -14,8 +14,6 @@ class ReadWriteable
 public:
 	virtual uint8_t read( uint16_t addr ) = 0;
 	virtual void write( uint16_t addr, uint8_t data ) = 0;
-
-	bool illegalOpcode;
 };
 
 class mos6502
@@ -194,4 +192,6 @@ public:
     uint8_t GetResetA();
     uint8_t GetResetX();
     uint8_t GetResetY();
+
+	bool illegalOpcode;
 };
