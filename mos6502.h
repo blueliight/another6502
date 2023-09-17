@@ -14,6 +14,8 @@ class ReadWriteable
 public:
 	virtual uint8_t read( uint16_t addr ) = 0;
 	virtual void write( uint16_t addr, uint8_t data ) = 0;
+
+	bool illegalOpcode;
 };
 
 class mos6502
@@ -53,8 +55,6 @@ private:
 	static Instr InstrTable[256];
 
 	void Exec(Instr i);
-
-	bool illegalOpcode;
 
 	// addressing modes
 	uint16_t Addr_ACC(); // ACCUMULATOR
